@@ -54,6 +54,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .empty{opacity:.85;font-style:italic;margin-top:8px}
 .tag{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:2px 7px;border-radius:99px;margin:2px 3px 0 0}
 .tag.dark{background:#e2e8f0;color:#334155}.tag.rh{background:#7c3aed;color:#fff}
+.tag.yel{background:#fef3c7;color:#78350f}.tag.org{background:#fed7aa;color:#7c2d12}.tag.redw{background:#fecaca;color:#7f1d1d}
 .towns{display:grid;gap:10px}
 .town{border:1px solid var(--line);border-left:6px solid var(--off);border-radius:12px;padding:10px 12px}
 .town.l0{border-left-color:var(--ok)}.town.l1{border-left-color:var(--stand)}.town.l2{border-left-color:var(--bar)}
@@ -76,6 +77,7 @@ th{font-size:11px;text-transform:uppercase;color:var(--mute)}
 .callout{background:#f0fdfa;border:1px solid #99f6e4;border-radius:12px;padding:10px 12px;margin-bottom:10px}
 .errlist .e{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#7f1d1d;font-size:13px}
 .log li{margin-bottom:6px;font-size:13px}
+.rg th.y{background:#fef9c3;color:#713f12}.rg th.o{background:#fed7aa;color:#7c2d12}.rg th.r{background:#fecaca;color:#7f1d1d}
 @media(min-width:760px){.grid3{grid-template-columns:repeat(3,1fr)}.towns{grid-template-columns:repeat(2,1fr)}.hero{padding:24px 28px 64px}}
 @media(min-width:1000px){.towns{grid-template-columns:repeat(4,1fr)}}
 </style>
@@ -112,7 +114,16 @@ th{font-size:11px;text-transform:uppercase;color:var(--mute)}
     <div class="chips" id="chips"></div>
     <div style="margin-top:10px"><button id="refresh" type="button" class="ghost">Refresh now</button></div>
     <p class="hint">River flow is <strong>modelled</strong>, not measured at a gauge: Copernicus GloFAS river discharge (5 km grid) served by Open-Meteo.com (CC BY 4.0). Forecast and history come from the same model so thresholds and forecasts are comparable. Rain warnings: Met Éireann. Resources and notes: the council sheet.</p>
-    <p class="hint"><strong>Met Éireann rain warning guide.</strong> Yellow: 20–30 mm in 6 h, 30–40 mm in 12 h, or 30–50 mm in 24 h. Orange: 30–50 mm in 6 h, 40–60 mm in 12 h, or 50–80 mm in 24 h. Red: more than 50 mm in 6 h, 60 mm in 12 h or 80 mm in 24 h. Warnings are issued up to 48 hours ahead. River Watch counts only <em>rain</em> warnings; orange or red wind, thunderstorm or other warnings are shown on the town card but change nothing.</p>
+    <details>
+      <summary class="hint" style="cursor:pointer">How Met Éireann defines rain warnings (reference)</summary>
+      <div class="scroll" style="margin-top:6px"><table class="rg">
+        <tr><th></th><th class="y">Yellow</th><th class="o">Orange</th><th class="r">Red</th></tr>
+        <tr><td><b>Rain</b></td><td>20–30 mm in 6 h or less<br>30–40 mm in 12 h or less<br>30–50 mm in 24 h</td><td>30–50 mm in 6 h or less<br>40–60 mm in 12 h or less<br>50–80 mm in 24 h</td><td>More than 50 mm in 6 h<br>More than 60 mm in 12 h<br>More than 80 mm in 24 h or less</td></tr>
+        <tr><td><b>Meaning</b></td><td>Not a threat to the general population, but potentially dangerous on a localised scale</td><td>Infrequent and dangerous; may pose a threat to life and property</td><td>Rare and very dangerous conditions</td></tr>
+        <tr><td><b>River Watch</b></td><td>Mentioned only</td><td>Raises the town one level</td><td>Raises the town one level</td></tr>
+      </table></div>
+      <p class="hint">Warnings are issued up to 48 hours ahead; the main set is usually issued between 10am and midday and updated as needed. The feed uses awareness levels 1 Green/Minor, 2 Yellow/Moderate, 3 Orange/Severe, 4 Red/Extreme. Impacts depend on location, recent weather, ground state and duration. Source: www.met.ie/warnings</p>
+    </details>
   </section>
 
   <section class="card">
@@ -162,6 +173,9 @@ const TOWN_KEYS = [['enniscorthy','enniscorthy'],['carrick','carrick'],['clonmel
 const CREWS = ['Clonmel','Mallow','Athlone'];
 const LEVELS = ['Normal','Standby','Barriers'];
 const COUNTIES = ['Carlow','Cavan','Clare','Cork','Donegal','Dublin','Galway','Kerry','Kildare','Kilkenny','Laois','Leitrim','Limerick','Longford','Louth','Mayo','Meath','Monaghan','Offaly','Roscommon','Sligo','Tipperary','Waterford','Westmeath','Wexford','Wicklow'];
+// Met Éireann awareness levels: 1 Green/Minor, 2 Yellow/Moderate, 3 Orange/Severe, 4 Red/Extreme
+const AWARE_COLOURS = ['green','yellow','orange','red'];
+const SEVERITY_COLOURS = {minor:'green', moderate:'yellow', severe:'orange', extreme:'red'};
 
 /* ---------- state (memory only) ---------- */
 let sessionKey = '';
@@ -176,6 +190,7 @@ const hhmmss = d => d.toLocaleTimeString('en-GB',{hour12:false});
 const iso = d => d.toISOString().slice(0,10);
 const countiesIn = t => COUNTIES.filter(c => new RegExp('\\b'+c+'\\b','i').test(t || ''));
 const toNum = v => { if (v == null) return null; const s = String(v).replace(/,/g,'').trim(); if (s === '') return null; const n = parseFloat(s); return isFinite(n) ? n : null; };
+const shortWhen = d => d ? d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}) : '?';
 function logErr(source, e){ state.errors.push({time:hhmmss(new Date()), source, text:(e && e.name && e.message ? e.name+': '+e.message : String(e))}); }
 
 async function fetchText(url){
@@ -280,6 +295,7 @@ function winterEvents(st,p99){
   const first4 = sum(per.slice(0,4)), last4 = sum(per.slice(5));
   return {per, total:sum(per), first4, last4, coverage:valid/days};
 }
+const fmtDate = k => k ? String(k%100).padStart(2,'0')+'/'+String(Math.floor(k/100)%100).padStart(2,'0')+'/'+Math.floor(k/10000) : '–';
 
 /* ---------- warnings ---------- */
 function extractWarnings(json){
@@ -287,36 +303,40 @@ function extractWarnings(json){
   const walk = o => {
     if(Array.isArray(o)) o.forEach(walk);
     else if(o && typeof o === 'object'){
-      if(o.level || o.severity || o.headline || o.onset || o.type || o.capId || o.awareness_level || o.awareness_type) out.push(o);
+      if(o.awareness_level || o.awareness_type || o.level || o.severity || o.headline || o.onset || o.type || o.capId) out.push(o);
       else Object.values(o).forEach(walk);
     }
   };
   walk(json); return out;
 }
+const asText = v => v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
+/* Awareness level: "3; orange; Severe", "3", "orange", or a severity word. Never searches descriptions. */
+function levelOf(w){
+  const fields = [w.awareness_level, w.level, w.warning_level, w.colour, w.color].filter(v => v != null).map(asText);
+  for(const s of fields){
+    const m = s.match(/\b(red|orange|yellow|green)\b/i); if(m) return m[1].toLowerCase();
+    const n = s.trim().match(/^([1-4])\b/); if(n) return AWARE_COLOURS[+n[1]-1];
+  }
+  const sev = asText(w.severity).trim().toLowerCase();
+  if(SEVERITY_COLOURS[sev]) return SEVERITY_COLOURS[sev];
+  const hm = [w.headline, w.title, w.event].map(asText).join(' ').match(/\b(red|orange|yellow)\b/i);
+  return hm ? hm[1].toLowerCase() : null;
+}
 function readWarning(w){
   const text = JSON.stringify(w);
-  const pick = (...keys) => keys.map(k => w[k]).filter(v => v != null && typeof v !== 'object').join(' ');
-  // Level: colour word first, then awareness number (1 green, 2 yellow, 3 orange, 4 red), then CAP severity as a last resort.
-  const lf = pick('awareness_level','awarenessLevel','level','colour','color','severity','headline','title','event');
-  let level = null, inferred = false;
-  const cm = lf.match(/\b(red|orange|yellow|green)\b/i);
-  if(cm) level = cm[1].toLowerCase();
-  else {
-    const nm = pick('awareness_level','awarenessLevel','level').match(/\b([1-4])\b/);
-    if(nm) level = ['green','yellow','orange','red'][+nm[1]-1];
-    else {
-      const sv = pick('severity').match(/\b(minor|moderate|severe|extreme)\b/i);
-      if(sv){ level = {minor:'green',moderate:'yellow',severe:'orange',extreme:'red'}[sv[1].toLowerCase()]; inferred = true; }
-    }
-  }
-  const kind = pick('awareness_type','awarenessType','type','event','phenomenon','hazard').trim();
-  const tf = kind + ' ' + pick('headline','title');
-  const rain = /rain/i.test(tf.trim() || text);
-  const on = parseWhen(w.onset || w.effective || w.start || w.validFrom || w.valid_from || w.from);
-  const ex = parseWhen(w.expiry || w.expires || w.end || w.validTo || w.valid_to || w.to);
+  const level = levelOf(w);
+  const typeText = [w.awareness_type, w.type, w.phenomenon, w.event, w.headline, w.title].map(asText).filter(Boolean).join(' ');
+  const rain = /\brain/i.test(typeText) && !/\bflood/i.test(asText(w.awareness_type)+asText(w.type));
+  const flood = /\bflood/i.test(asText(w.awareness_type)+' '+asText(w.type)+' '+asText(w.headline)+' '+asText(w.title)) && !rain;
+  const on = parseWhen(w.onset || w.effective || w.start || w.validFrom || w.from);
+  const ex = parseWhen(w.expiry || w.expires || w.end || w.validTo || w.to);
+  const cancelled = /cancel/i.test(asText(w.msgType)+' '+asText(w.status));
   const now = Date.now(), end = now + 48*3600e3;
-  const active = (!on || on.getTime() <= end) && (!ex || ex.getTime() >= now);
-  return {level, inferred, rain, kind, on, ex, active, counties: countiesIn(text), headline: w.headline || w.title || w.event || w.type || 'Warning'};
+  const active = !cancelled && (!on || on.getTime() <= end) && (!ex || ex.getTime() >= now);
+  const areaText = [w.areaDesc, w.area, w.areas, w.regions, w.region, w.counties, w.county, w.headline, w.title].map(asText).filter(Boolean).join(' ');
+  let counties = countiesIn(areaText);
+  if(!counties.length) counties = countiesIn(text);
+  return {level, rain, flood, on, ex, active, counties, type: asText(w.awareness_type || w.type || '').replace(/^\d+;\s*/,''), headline: w.headline || w.title || w.type || 'Warning'};
 }
 
 /* ---------- assessment ---------- */
@@ -326,7 +346,7 @@ function assess(D){
   const get = (row,i) => i == null ? '' : (row[i] ?? '').trim();
   const results = [];
   for(const t of TOWNS){
-    const r = {t, reasons:[], flags:[], rehearsal:[], warns:[], otherWarns:[], notes:'', p95:null, p99:null, peak:null, peakSource:'', base:null, level:null,
+    const r = {t, reasons:[], flags:[], rehearsal:[], warns:[], notes:'', p95:null, p99:null, peak:null, peakSource:'', base:null, level:null,
       barrierAvail:true, barrierWhy:'', crew:null, outcome:'cannot', pctAbove:null, counties:[...t.counties], second:[], res:null, fc:[]};
     const h = D.hist[t.id], f = D.fc[t.id];
     const st = h && h.ok ? h.stats : null; r.stats = st;
@@ -374,13 +394,21 @@ function assess(D){
     const rv2 = k => rows.map(x => get(x,c[k])).find(v => v !== '') ?? '';
     r.res = {pumps:rv2('pumps'), sandbags:rv2('sandbags'), staff:rv2('staff'), sets};
 
-    /* rain warnings (only rain counts; other orange/red ones are shown, not counted) */
+    /* rain warnings: orange/red rain covering the town's county(ies), in force within 48 h, raises one level */
     let wRaise = 0;
     if(W){
       for(const w of W){
         if(!w.active) continue;
         if(!w.counties.some(x => r.counties.includes(x))) continue;
-        if(!w.rain){ if(w.level === 'orange' || w.level === 'red') r.otherWarns.push(w); continue; }
+        if(w.flood){
+          r.flags.push('Flooding-type warning in force for '+r.counties.filter(x => w.counties.includes(x)).join(', ')+' ("'+w.headline+'"). It does not change the level under the rules: check met.ie.');
+          continue;
+        }
+        if(!w.rain) continue;
+        if(w.level == null){
+          r.flags.push('A rain warning covers this county ("'+w.headline+'") but its level could not be read. It was NOT applied: this level may be one too low. Check met.ie.');
+          continue;
+        }
         r.warns.push(w);
         if(w.level === 'orange' || w.level === 'red') wRaise = 1;
       }
@@ -436,7 +464,7 @@ function assess(D){
 
   const am = results.filter(r => r.stats && r.stats.p99 != null && r.stats.fullYears >= 10).map(r => ({r, ev: winterEvents(r.stats, r.stats.p99)}));
   am.sort((a,b) => (b.ev.total-a.ev.total) || (b.ev.last4-a.ev.last4));
-  const unmatched = W ? W.filter(w => w.rain && w.active && (!w.level || ((w.level==='orange'||w.level==='red') && !w.counties.length))) : [];
+  const unmatched = W ? W.filter(w => w.rain && w.active && (w.level==='orange'||w.level==='red') && !w.counties.length) : [];
   return {results, rank, slots, allowed, am, unmatchedWarnings: unmatched, warnCount: W ? W.length : null};
 }
 
@@ -469,6 +497,7 @@ function gauge(r){
   const pc = v => Math.max(0,Math.min(100, v/max*100)).toFixed(1);
   return '<div class="gauge"><i class="fill l'+r.base+'" style="width:'+pc(r.peak)+'%"></i><b class="m" style="left:'+pc(r.p95)+'%"><u>95th</u></b><b class="m" style="left:'+pc(r.p99)+'%"><u>99th</u></b></div>';
 }
+const AW_NUM = {green:1, yellow:2, orange:3, red:4};
 function townCard(r){
   const lv = r.level == null ? 'CANNOT RATE' : LEVELS[r.level].toUpperCase();
   const cls = r.level == null ? '' : 'l'+r.level;
@@ -479,8 +508,11 @@ function townCard(r){
   if(r.stats && r.stats.lat != null) h += '<div class="meta">Model cell '+f1(r.stats.lat,2)+', '+f1(r.stats.lon,2)+' · '+r.stats.fullYears+' full years</div>';
   const tags = [];
   if(r.rehearsal.length) tags.push('<span class="tag rh">Rehearsal value</span>');
-  r.warns.forEach(w => tags.push('<span class="tag dark">'+esc(w.level||'level unreadable')+' rain'+(w.level==='orange'||w.level==='red'?' (+1 level)':'')+(w.inferred?' (level inferred)':'')+'</span>'));
-  r.otherWarns.forEach(w => tags.push('<span class="tag dark">'+esc(w.level)+' '+esc(w.kind||'other warning')+' (not counted: rain only)</span>'));
+  r.warns.forEach(w => {
+    const tc = w.level==='red' ? 'redw' : (w.level==='orange' ? 'org' : (w.level==='yellow' ? 'yel' : 'dark'));
+    const raise = (w.level==='orange'||w.level==='red') ? ' (+1 level)' : (w.level==='yellow' ? ' (mention only)' : '');
+    tags.push('<span class="tag '+tc+'">'+esc(w.level||'warning')+(AW_NUM[w.level]?' (level '+AW_NUM[w.level]+')':'')+' rain'+raise+' · '+esc(shortWhen(w.on))+' to '+esc(shortWhen(w.ex))+'</span>');
+  });
   if(r.second.length) tags.push('<span class="tag dark">also counts '+esc(r.second.join(', '))+'</span>');
   if(tags.length) h += '<div>'+tags.join('')+'</div>';
   if(r.rehearsal.length) h += '<div class="flags">'+r.rehearsal.map(esc).join('<br>')+'</div>';
@@ -508,7 +540,7 @@ function renderDash(A){
   h += '<div class="b note" style="max-width:100%;margin-bottom:10px">Flow is <strong>modelled</strong> (GloFAS via Open-Meteo), not measured at a gauge. Treat the result as advice to check, and compare with waterlevel.ie.</div>';
   if(cannot.length === R.length) h += '<div class="b err" style="max-width:100%;margin-bottom:10px"><strong>No town can be rated.</strong> Nothing here should be read as "Normal". See the reason on each town.</div>';
   else if(cannot.length) h += '<div class="b note" style="max-width:100%;margin-bottom:10px"><strong>'+cannot.length+' town(s) cannot be rated</strong> ('+cannot.map(r => esc(r.t.name)).join(', ')+'). They are not shown as Normal.</div>';
-  if(A.unmatchedWarnings.length) h += '<div class="b note" style="max-width:100%;margin-bottom:10px"><strong>Rain warning whose level or county could not be read:</strong> '+A.unmatchedWarnings.map(w => esc(w.headline)).join('; ')+'. Check met.ie by hand; levels may be one too low.</div>';
+  if(A.unmatchedWarnings.length) h += '<div class="b note" style="max-width:100%;margin-bottom:10px"><strong>Orange/red rain warning with no county readable:</strong> '+A.unmatchedWarnings.map(w => esc(w.headline)).join('; ')+'. Check met.ie by hand; levels may be one too low.</div>';
   h += '<div class="grid3">'+p1+p2+p3+'</div>';
   h += '<h2 style="margin-top:16px">All towns</h2><div class="towns">'+R.map(townCard).join('')+'</div>';
   if(A.rank.length) h += '<div class="hint" style="margin-top:8px">Crew ranking (highest % above 99th first, ties by higher peak): '+A.rank.map(x => x.rank+'. '+esc(x.name)+' '+f1(x.pct_above_99th)+'%').join(' · ')+'</div>';
@@ -555,20 +587,20 @@ function bubble(cls, html){ const d = document.createElement('div'); d.className
 function md(s){ let h = esc(s).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>'); h = h.replace(/^(?:[-*] )(.*)$/gm,'• $1'); return h.replace(/\n/g,'<br>'); }
 
 const SYSTEM_RULES = `You are River Watch, an internal flood-response advisor for a small team shared by eight county councils (Enniscorthy, Clonmel, Mallow, Fermoy, Bandon, Athlone, Carrick-on-Shannon, Ennis).
-RULES: River Watch recommends; it never sends a crew. The Duty Officer records the decision and the reason.
+RULES: River Watch recommends; it never sends a crew. The Duty Officer records the decision and the reason, each afternoon by 16:00.
 Per town use the daily river flow of that town's own river. Forecast peak = highest daily flow forecast for today and the next two days. Thresholds = the town's own 95th and 99th percentiles of daily flow over at least ten full years. Flow here is MODELLED (GloFAS via Open-Meteo), not gauge-measured: say so when it matters.
 Levels: Normal = peak below 95th. Standby = at or above 95th (staff on call confirmed, pumps checked, sandbags staged). Barriers = at or above 99th (barriers erected by a crew before 18:00).
-An orange or red RAIN warning covering the town's county, in force in the next 48 hours, raises the town one level. Yellow is mentioned, changes nothing. Other orange/red warnings (wind, thunderstorm, etc.) are mentioned but change nothing. A town spanning two counties counts both; notes name the second.
+WARNINGS: from Met Éireann. The feed uses awareness levels 1 Green/Minor, 2 Yellow/Moderate, 3 Orange/Severe, 4 Red/Extreme. Only RAIN warnings count. An orange or red rain warning covering the town's county, in force in the next 48 hours, raises the town one level. Yellow is mentioned, changes nothing. A town spanning two counties counts both; notes name the second.
+Met Éireann rain criteria: Yellow = 20-30 mm in 6 h or less, 30-40 mm in 12 h or less, 30-50 mm in 24 h (not a threat to the general population but potentially dangerous locally). Orange = 30-50 mm in 6 h or less, 40-60 mm in 12 h or less, 50-80 mm in 24 h (infrequent and dangerous, may threaten life and property). Red = more than 50 mm in 6 h, more than 60 mm in 12 h, more than 80 mm in 24 h or less (rare and very dangerous). Impacts vary with location, recent weather, ground state and duration. Use these only to explain what a warning means, never to change a level.
 Rehearsal values: flow_override_m3s replaces the forecast peak; warning_override orange/red is treated as a live warning. Always say when an answer uses a rehearsal value.
 Crews at Clonmel (Clonmel, Fermoy, Enniscorthy), Mallow (Mallow, Fermoy, Bandon), Athlone (Athlone, Carrick-on-Shannon, Ennis): at most two towns a night each. Oversubscribed: rank by percent above the 99th percentile, then higher peak. A town with no barrier set, or no crew place, gets every Standby measure and is flagged to the Area Manager.
 Area Manager question: high-flow events = runs of consecutive days at or above the town's 99th percentile in winters 1 October to 31 March, 2016/17 to 2024/25.
 Notes in the sheet are facts the Duty Officer logged for tonight: treat them as true and apply them.
 NOT COVERED: coastal and tidal flooding, road closures, insurance, anything about an individual home. Send those to the council's area office.
-HOW TO ANSWER: The JSON below was computed by code from live data moments ago. Treat levels, crew places and event counts in it as authoritative: explain them, never recalculate or overrule them. If a town is "CANNOT RATE", say so and why; never guess a level and never call it Normal. If a data source failed, or a rain warning's level or county could not be read, say so first. Be concise and plain, honest about limits and uncertainty, and never more confident than the data allows.`;
+HOW TO ANSWER: The JSON below was computed by code from live data moments ago. Treat levels, crew places and event counts in it as authoritative: explain them, never recalculate or overrule them. If a town is "CANNOT RATE", say so and why; never guess a level and never call it Normal. If a data source failed, say so first. If a town's flags mention an unreadable warning level, say the level may be one too low. Be concise and plain, honest about limits and uncertainty, and never more confident than the data allows.`;
 
 function context(A, D){
   const num = v => v == null ? null : Math.round(v*100)/100;
-  const wj = w => ({level:w.level, level_inferred_from_severity:w.inferred, kind:w.kind, headline:w.headline, from:w.on&&w.on.toISOString(), to:w.ex&&w.ex.toISOString()});
   return {
     fetched_at: D.time.toISOString(),
     sources: {warnings: D.warnings.ok ? 'ok ('+A.warnCount+' items)' : 'FAILED: '+D.warnings.error.split('\n')[0],
@@ -576,13 +608,12 @@ function context(A, D){
     towns: A.results.map(r => ({town:r.t.name, river:r.t.river, counties:r.counties, p95_m3s:num(r.p95), p99_m3s:num(r.p99),
       daily_forecast:r.fc.map(d => ({date:d.date, m3s:num(d.v)})), forecast_peak_used_m3s:num(r.peak), peak_source:r.peakSource||null,
       base_level:r.base==null?null:LEVELS[r.base],
-      rain_warnings_in_48h:r.warns.map(wj),
-      other_orange_red_warnings_not_counted:r.otherWarns.map(wj),
+      rain_warnings_in_48h:r.warns.map(w => ({level:w.level, awareness_level:AW_NUM[w.level]||null, type:w.type, headline:w.headline, from:w.on&&w.on.toISOString(), to:w.ex&&w.ex.toISOString()})),
       final_level:r.level==null?'CANNOT RATE':LEVELS[r.level], outcome:r.outcome, crew:r.crew, pct_above_99th:num(r.pctAbove),
       barrier_set_available:r.barrierAvail, resources:r.res, notes:r.notes, rehearsal:r.rehearsal, reasons_cannot_rate:r.reasons, flags:r.flags})),
     crew_ranking: A.rank,
     crews: Object.fromEntries(CREWS.map(c => [c, {towns:A.slots[c].map(r => r.t.name), restricted_to:A.allowed[c] ? A.allowed[c].map(id => TOWNS.find(t => t.id===id).name) : null}])),
-    rain_warnings_with_unreadable_level_or_county: A.unmatchedWarnings.map(w => w.headline),
+    orange_red_warnings_with_no_readable_county: A.unmatchedWarnings.map(w => w.headline),
     area_manager_counts: A.am.map(x => ({town:x.r.t.name, events:x.ev.total, first4:x.ev.first4, last4:x.ev.last4, coverage_pct:Math.round(x.ev.coverage*100)}))
   };
 }
